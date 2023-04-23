@@ -1,0 +1,1087 @@
+---
+title: "DMI_Hands_on_1"
+author: "Nikola Panajotovikj (nikola.panajotovikj01@estudiant.upf.edu)"
+date: "Last update: `r format(Sys.time(), '%d, %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+    fig_caption: yes
+  pdf_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Please note that we didn’t want to overcrowd the Rmd file, that’s why here we are including only the plots that we were interested to discuss, otherwise we did a detailed, quick, not-really-pretty visualization in [python](https://colab.research.google.com/drive/1641tlYuIDA7OtZse1xh3H9-4-
+gBQ_9ZH#scrollTo=OAi83G-ey2HN) for every variable as it relates to the others.
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# First of all run all the necessary libraries for both exercises
+
+## Common libraries:
+  # To do the plots
+library(ggplot2)
+  # Allow to modify the tables
+library(dplyr)
+  # Add more themes in the plots
+library(ggthemes)
+  # To merge different plots in a single plot
+library(cowplot)
+
+## First exercise:
+  # To impute the missing values
+library(mice)
+  # To do the plots of the Univariate and Bivariate analysis
+library(tidyr)
+  # To do correlograms
+library(GGally)
+
+## Second exercise:
+  # To import excel files
+library(openxlsx)
+  # Visualize and modify the table of Figure 1B
+library(gridExtra)
+  # To add the colour palette of the heatmap
+library(RColorBrewer)
+  # To do the second heatmap
+library(ComplexHeatmap)
+```
+
+```{r eval=FALSE, include=FALSE}
+# Install the package "ComplexHeatmap" if it is needed
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("ComplexHeatmap")
+```
+
+# **1. Analysis of the Heart Disease Dataset** 
+Load the data from [here](https://raw.githubusercontent.com/jpinero/DMI_2021/main/datasets/heart_disease_dataset.csv), and the description is [here](https://raw.githubusercontent.com/jpinero/DMI_2021/main/datasets/heart_disease_description.txt). 
+The original dataset comes from [here](https://archive.ics.uci.edu/ml/datasets/Heart+Disease) and corresponds to the [processed cleveland data](https://archive.ics.uci.edu/ml/machine-learning-databases/heart-disease/processed.cleveland.data)
+
+## **1.1. Perform an EDA on the dataset**
+
+To perform the EDA we follow several steps:
+
+- Collect, clean and prepare the data for analysis by handling missing values, removing outliers, and transforming variables as necessary
+- Perform an univariate and bivariate analysis. Visualizations
+- Conclusions
+
+### **Step 1: Collect, clean and prepare the data**
+
+#### **a) Our data**
+
+First we load our data using 'read.table' function and assign it to a variable called *heart_disease_table*. We use it because .csv files use spaces to separate data and this function transform it into a readable table.
+
+
+```{r}
+heart_disease_table <-read.table("./heart_disease_dataset.csv",
+                                 header=TRUE,
+                                 na.strings = "?")
+
+# By using na.strings we can transform "?" into NAs
+# in order to allow the recognition of the missing values
+
+```
+
+Now we have our initial table, we can take a first look and get to know some of the characteristics of the variables:
+
+```{r}
+summary(heart_disease_table)
+
+str(heart_disease_table)
+```
+
+Looking at the results, we see that we have 15 variables and 303 observations. The differences between the values associated with sex is evident, there are many more men than women in this dataset. In addition, if we look at the minimum and maximum values, we can see that in some variables there is a large difference between them (chol, trestbps and thalach). Later on we will go deeper into this and we will see if there can be any outlier.
+
+By running the last commands, we see that most of them are integer variables, except *oldpeaks* which is numerical. In addition, we observe that in the *ca* and *thal* columns there are 4 and 2 missing values, respectively.
+
+However, if we look for the description of each variable within the file *heart_disease_description.txt*, we realize that some of these integers are associated to a categorical variable:
+
+- **sex**: 1 = male; 0 = female
+- **cp**: chest pain type
+  - Value 1: typical angina
+  - Value 2: atypical angina
+  - Value 3: non-anginal pain
+  - Value 4: asymptomatic
+
+- **fbs** (fasting blood sugar > 120 mg/dl): 1 = true; 0 = false
+- **restecg**: resting electrocardiographic results
+  - Value 0: normal
+  - Value 1: having ST-T wave abnormality (T wave inversions and/or ST elevation or depression of > 0.05 mV)
+  - Value 2: showing probable or definite left ventricular hypertrophy by Estes' criteria
+- **exang** (exercise induced angina): 1 = yes; 0 = no
+- **slope**: the slope of the peak exercise ST segment
+  - Value 1: upsloping
+  - Value 2: flat
+  - Value 3: downsloping
+ 
+- **ca**: number of major vessels (0-3) colored by flourosopy
+- **thal**:
+  - 3 = normal
+  - 6 = fixed defect
+  - 7 = reversable defect
+- **num**: diagnosis of heart disease (angiographic disease status)
+  - Value 0: < 50% diameter narrowing
+  - Value 1: > 50% diameter narrowing
+
+So this are the categorical variables and we have to make sure that they are determined as such.
+But first, we check if there is any ID repeated and if not, it will mean that each of the data corresponds to different patients. 
+
+```{r}
+# Check if there is any ID repeated
+duplicated_ID <- heart_disease_table$patient_id[duplicated(heart_disease_table$patient_id)]
+duplicated_ID
+
+```
+As we can see there is no repeated ID in this column, so  we will remove it since it is not informative and we will not need it to perform the analysis.
+
+```{r}
+heart_disease_table$patient_id <- NULL
+```
+
+Now we will change each numerical value by its corresponding categorical value.
+```{r, include=FALSE}
+
+# "sex" variable 
+
+heart_disease_table$sex <- factor(ifelse(heart_disease_table$sex == 1, "male", "female"))
+
+# "cp" variable
+
+heart_disease_table$cp <- factor(heart_disease_table$cp,
+                                      levels = c(1,2,3,4), 
+                                      labels = c("typical angina", "atypical angina","non-anginal pain","asymptomatic"))
+
+# "fbs" variable
+heart_disease_table$fbs <- factor(ifelse(heart_disease_table$fbs == 1, "TRUE", "FALSE"))
+
+# "restecg" variable
+
+heart_disease_table$restecg <- factor(heart_disease_table$restecg,
+                                      levels = c(0,1,2), 
+                                      labels = c("normal", "ST-T wave abnormality","Ventricular hypertrophy"))
+
+# "exang" variable
+heart_disease_table$exang <- factor(ifelse(heart_disease_table$exang == 0, "No", "Yes"))
+
+# "slope" variable
+
+heart_disease_table$slope <- factor(heart_disease_table$slope,
+                                      levels = c(1,2,3), 
+                                      labels = c("Upsloping", "Flat","Downslopping"))
+
+# "thal" variable
+heart_disease_table$thal <- factor(heart_disease_table$thal,
+                                    levels = c(3,6,7), 
+                                    labels = c("Normal", "Fixed defect","Reversable defect"))
+
+# "num" variable
+heart_disease_table$num <- factor(ifelse(heart_disease_table$num > 0, "Disease", 
+                                  ifelse(heart_disease_table$num == 0, "No disease", 
+                                         heart_disease_table$num)))
+
+
+# Transform also "ca" into a categorical variable
+heart_disease_table$ca <- as.factor(heart_disease_table$ca)
+
+
+# Then, we check the variables
+str(heart_disease_table)
+
+```
+
+Now we check that now the categorical variables are assumed as such (the terms *factor* and *chr* refer to these types of variables). It is interesting to have some variables as factors, because this allows us to take into account the number of observations per level in each variable.
+
+
+
+#### **b) Missing values**
+As we have said before, there are some **missing values** in the *ca* and *thal* column After modifying our *heart_disease_table* they should still be there, let's check it.
+
+```{r}
+NA_count_by_column <- colSums(is.na(heart_disease_table))
+print(NA_count_by_column)
+
+# Save this table in a second variable
+first_modified_table <- heart_disease_table
+```
+
+As expected we still have these values, so we are going to impute them using the **package mice**. We save our table in a new variable before performing the imputation, just in case we have to come back to this point.
+
+By this imputation step we will replace the missing values with an substituted, best guess value. In this case, we use [mice](https://cran.r-project.org/web/packages/mice/mice.pdf) package because allows us to do this imputation assuming that our missing value is a Missing at Random (MAR).
+
+
+```{r, include=FALSE}
+imputed_data <- mice(heart_disease_table)
+completed_data <- complete(imputed_data)
+```
+
+
+```{r}
+# check again if there are missing values
+NA_count_check <- colSums(is.na(completed_data))
+print(NA_count_check)
+```
+
+As we expect, there is no missing value now, so lets continue with the outliers.
+
+
+#### **c) Outliers**
+
+In order to check the outliers, we will represent the data using histograms and boxplots and see it there is any extreme value. We use the [ggplot2](https://cran.r-project.org/web/packages/ggplot2/index.html) package.
+
+We will do the plots for those variables that are numeric: age, trestbps, chol, thalach and oldpeak. Then, we use the package [**cowplot**](https://cran.r-project.org/web/packages/cowplot/vignettes/introduction.html) to merge all of them in a single plot.
+
+```{r fig.height=4, fig.width=6, message=FALSE, warning=FALSE}
+age_boxplot <- ggplot(completed_data, aes(y = age)) +
+  geom_boxplot(color = "red", outlier.color = "black") +       
+  ylab ("Age\n(years)") +
+  scale_x_discrete() +
+  theme_classic()
+
+age_barplot <- ggplot(completed_data, aes(x = age)) +
+  geom_histogram(color = "black", fill = "grey") +       
+  xlab("Age\n(years)") +
+  ylab("Frequency") +
+  scale_x_continuous() +
+  theme_classic()
+
+# Merge the age plots
+age_plots <- list(age_barplot, age_boxplot)
+plot_grid(plotlist = age_plots)
+```
+
+There is no outlier in Age variable.
+
+```{r fig.height=4, fig.width=6, message=FALSE}
+trestbps_boxplot <- ggplot(completed_data, aes(y = trestbps)) +
+  geom_boxplot(color = "red", outlier.color = "black", outlier.size = 0.8) +       
+  ylab ("Resting blood pressure (trestbps)\n (mmHg)") +
+  scale_x_discrete() +
+  theme_classic()
+
+
+trestbps_barplot <- ggplot(completed_data, aes(x = trestbps)) +
+  geom_histogram(color = "black", fill = "grey") +       
+  xlab("Resting blood pressure (trestbps)\n (mmHg) ") +
+  ylab("Frequency") +
+  scale_x_continuous() +
+  theme_classic()
+
+# Merge the age plots
+trestbps_plots <- list(trestbps_barplot, trestbps_boxplot)
+
+plot_grid(plotlist = trestbps_plots)
+```
+
+It seems that there is some extreme values 
+
+
+```{r fig.height=4, fig.width=6, message=FALSE}
+chol_boxplot <- ggplot(completed_data, aes(y = chol)) +
+  geom_boxplot(color = "red", outlier.color = "black", outlier.size = 0.8) +       
+  ylab ("serum cholesterol \n(mg/dl)") +
+  scale_x_discrete() +
+  theme_classic()
+
+chol_barplot <- ggplot(completed_data, aes(x = chol)) +
+  geom_histogram(color = "black", fill = "grey") +       
+  xlab("serum cholesterol\n(mg/dl)") +
+  ylab("Frequency") +
+  scale_x_continuous() +
+  theme_classic()
+
+# Merge the chol plots
+chol_plots <- list(chol_barplot, chol_boxplot)
+plot_grid(plotlist = chol_plots)
+```
+
+
+
+```{r fig.height=4, fig.width=6, message=FALSE}
+thalach_boxplot <- ggplot(completed_data, aes(y = thalach)) +
+  geom_boxplot(color = "red", outlier.color = "black") +       
+  ylab ("Maximum heart rate achieved (thalach)") +
+  scale_x_discrete(labels = NULL) +
+  theme_classic()
+
+thalach_barplot <- ggplot(completed_data, aes(x = thalach)) +
+  geom_histogram(color = "black", fill = "grey") +       
+  xlab("Maximum heart rate achieved (thalach)") +
+  ylab("Frequency") +
+  scale_x_continuous() +
+  theme_classic()
+
+# Merge the thalach plots
+thalach_plots <- list(thalach_barplot, thalach_boxplot)
+plot_grid(plotlist = thalach_plots)
+```
+
+
+```{r fig.height=4, fig.width=6, message=FALSE}
+oldpeak_boxplot <- ggplot(completed_data, aes(y = oldpeak)) +
+  geom_boxplot(color = "red", outlier.color = "black", outlier.size = 0.8) +       
+  ylab ("ST depression induced by exercise\n relative to rest (oldpeak)") +
+  scale_x_discrete(labels = NULL) +
+  theme_classic()
+
+
+oldpeak_barplot <- ggplot(completed_data, aes(x = oldpeak)) +
+  geom_histogram(color = "black", fill = "grey") +       
+  xlab("ST depression induced by exercise\n relative to rest (oldpeak)") +
+  ylab("Frequency") +
+  scale_x_continuous() +
+  theme_classic()
+
+# Merge the oldpeak plots
+oldpeak_plots <- list(oldpeak_barplot, oldpeak_boxplot)
+plot_grid(plotlist = oldpeak_plots)
+
+```
+
+So as we can see in the plots, the variables **trestbps, chol, thalach and oldpeak** have some outliers. We also check some of this extreme values using the 'tail function' or we can observe the distribution of this variable using the 'summary' function:
+
+```{r echo=TRUE, message=FALSE}
+cols <- c('age','trestbps','chol','thalach','oldpeak')
+summary(heart_disease_table[cols])
+```
+Taking into account all this information we can conclude that **chol** and **oldpeak** variables have the most extreme values, because as we can see in the quartiles:
+
+- Serum cholesterol (mg/dl): 75% of the data (Q1-Q3) is between [126.0 - 275.0] and the maximum is 564.0.
+
+- ST depression induced by exercise relative to rest (oldpeak): 75% of the data (Q1-Q3) is between [0 - 1.6] and the maximum is 6.2.
+
+So, we focus on them and we replace their outliers with the closest value within the specified range for each variable instead of remove them.
+
+```{r}
+# Check the last 10 values of this variable
+tail(sort(completed_data$chol), n = 10)
+tail(sort(completed_data$oldpeak), n = 10)
+
+```
+We can see that for **chol** the deviating values start from around 407, and for 'oldpeak' around 4.3. So we will deal with these outliers by setting them to the next biggest value.
+
+```{r}
+chol_max = 407
+oldpeak_max = 4.3
+```
+
+```{r}
+# Before modifying the table we will store the current table in other variable
+before_outliers_data <- completed_data
+
+completed_data$chol[completed_data$chol > chol_max] <- chol_max
+completed_data$oldpeak[completed_data$oldpeak > oldpeak_max] <- oldpeak_max
+
+# Now we rename the table:
+heart_disease_modified <- completed_data
+
+```
+
+
+
+As a note, we first think to modify the outliers using the IQR criterion, but for the chol variable the max_accepted was 371, so by this criterion we see that we modified some values that could be possible in the context of disease, so we prefer to do it by this method.
+
+```{r eval=FALSE, include=FALSE}
+# Calculate the quartiles
+CholQuartiles <- quantile(completed_data$chol, c(0.25, 0.75))
+Q1 <- CholQuartiles[1]  
+Q3 <- CholQuartiles[2] 
+
+# Calculate the IQR
+IQRR(completed_data$chol)
+
+# Determine the minimum and maximum acceptable values
+min_accepted <- Q1 - 1.5 * IQR  # Upper range
+max_accepted <- Q3 + 1.5 * IQR  # Lower range
+```
+
+
+
+
+### **Step 2: Univariate analysis**
+In this part of the EDA, we will perform an univariate analysis for continuous and categorical variables in our data without missing values and with modified outliers (called **heart_disease_modified**).
+
+#### a) Numerical variables
+
+The **continuous variables** are: age, trestbps, chol, thalach and oldpeak.
+```{r, fig.align='center'}
+# Continuous variables
+cont_vars <- c("age", "trestbps", "chol", "thalach", "oldpeak")
+
+# HISTOGRAMS
+heart_disease_modified[,cont_vars] %>%  gather(cols, value) %>%  ggplot(aes(x = value)) +
+  geom_histogram(fill = "olivedrab") + 
+  scale_x_continuous(name = "Value") +
+  scale_y_continuous(name = "Frequency") +
+  facet_wrap(~ cols, scales = "free") + 
+  theme_bw()
+
+# QQ-PLOTS
+
+age_qqplot <- ggplot(heart_disease_modified, aes(sample = age)) +
+  geom_qq() +
+  geom_qq_line(color = "red")+
+  ggtitle("age") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+trestbps_qqplot <- ggplot(heart_disease_modified, aes(sample = trestbps)) +
+  geom_qq() +
+  geom_qq_line(color = "red")+
+  ggtitle("trestbps") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+chol_qqplot <- ggplot(heart_disease_modified, aes(sample = chol)) +
+  geom_qq() +
+  geom_qq_line(color = "red")+
+  ggtitle("chol") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+thalach_qqplot <- ggplot(heart_disease_modified, aes(sample = thalach)) +
+  geom_qq() +
+  geom_qq_line(color = "red")+
+  ggtitle("thalach") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+oldpeak_qqplot <- ggplot(heart_disease_modified, aes(sample = oldpeak)) +
+  geom_qq() +
+  geom_qq_line(color = "red")+
+  ggtitle("oldpeak") +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# Create a list to show all the plots together
+qqplots <- list(age_qqplot, trestbps_qqplot, chol_qqplot, thalach_qqplot, oldpeak_qqplot)
+plot_grid(plotlist = qqplots)
+
+```
+
+
+With this plots we can check that the variable refered to 'ST depression induced by exercise relative to rest (oldpeak)' does not follow a normal distribution, but the others do.
+
+#### b) Categorical variables
+
+The **categorial variables** are: sex, cp, fbs, restecg, exang, slope, thal and num.
+We separate the variables depending on the number of levels they have. The variables cp, restecg, slope and thal have more than 2 levels and if we represent with the other variables they cannot be clearly distinguished.
+```{r, fig.width=6, fig.height=4, fig.align='center'}
+# Categorical variables: clearly distinguished
+# BAR PLOTS
+cat_vars_clear_levels <- c("sex", "fbs", "exang", "ca", "num")
+
+heart_disease_modified[, cat_vars_clear_levels] %>% gather(cols, value) %>%  ggplot(aes(x = value)) +
+  geom_bar(fill = "lightblue3") +
+  facet_wrap(~ cols, scales = "free") +
+  scale_x_discrete(name = "Levels") +
+  scale_y_continuous(name = "Frequency") +
+  theme_bw() +
+  ggtitle("Categorical variables") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+  
+
+```
+
+The majority of people in this dataset seem to have 0 of major vessels colored by fluoroscopy (ca). And there are twice as many people who do not have exercise induced angina (exang) then those that do. Most of the records in this dataset are with fasting blood sugar (fbs) less 120 mg/dl. And most are male. The ratio between those that have more and less than 50% diameter narrowing in any major vessel is almost 1, but there are more people who have less than 50% diameter narrowing (do not have a heart disease).
+
+```{r, fig.width=6, fig.height=5, fig.align='center'}
+# Categorical variables: not clearly distinguished
+# BAR PLOTS
+cat_vars_dif_levels <- c("cp", "restecg", "slope", "thal")
+
+heart_disease_modified[, cat_vars_dif_levels] %>% gather(cols, value) %>%  ggplot(aes(x = value)) +
+  geom_bar(fill = "lightblue3") +
+  facet_wrap(~ cols, scales = "free") +
+  scale_x_discrete(name = "Levels") +
+  scale_y_continuous(name = "Frequency") +
+  theme_bw() +
+  ggtitle("Categorical variables") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7)) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+```
+
+Most people in this dataset are asymptomatic for chest pain. Only a few people have ST-T wave abnormality (T wave inversions and/or ST elevation or depression of > 0.05 mV) – actually only 4 people. For majority of people the slope of the peak exercise ST segment is flat or upsloping. The majority of people have a normal blood flow (thal refers to the blood disorder called thalassemia).
+
+## **1.2. Create visualizations in order to show which variables seem to be more associated with heart disease**
+
+Here we will perform a Bivariate analysis to look for the association of the categorical variable "num" (diagnosis of heart disease) and the other variables (categorical and continuous). By this, we will see the association between the variables with the conditions **Disease** and **No disease**.
+
+### **Step 3: Bivariate analysis **
+
+#### a) Categorical
+
+As we have done in the Univariate analysis we are going to split the categorical variables in two groups just to clarify the results. 
+```{r, width=6, fig.height=4, fig.align='center'}
+categorical_var_1 <- c("sex", "fbs", "exang", "ca", "num")
+
+heart_disease_modified[, categorical_var_1] %>% gather(cols, value, -num) %>% ggplot(aes(x = value, fill = num)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ cols, scales = "free") +
+  scale_fill_manual(values = c("tomato", "lightskyblue3")) +
+  xlab("Levels of each variable") + ylab("Frequency") +
+  ggtitle("Comparison of Categorical Variables\n for Disease and No Disease condition") +
+  theme_bw() +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+
+```
+
+Most people who do not have heart disease do not have any major vessels colored by fluoroscopy (ca). The case for people with disease is different. The least amount have 3 ca, but this is because the count of 3 ca is very lot itself. Then the others appear to be evenly distributed between the other categories.
+
+There seem to be a bit more people with a heart condition that experience exercise induced angina than those who do not, but the counts are almost equal. However, there are out of those that do not have exercise induced angina, most do not have a heart disease.
+
+There doesn’t really seem to be a link between having a fasting blood sugar greater than 120 mg/dl and having heart condition. 
+
+In this dataset, most of the people who have a heart disease are men and only a few a women.
+
+
+```{r, fig.width=7, fig.align='center'}
+categorical_var_2 <- c("cp", "restecg", "slope", "thal", "num") # we also num to do the plot in function of it
+
+heart_disease_modified[, categorical_var_2] %>% gather(cols, value, -num) %>% ggplot(aes(x = value, fill = num)) +
+  geom_bar(position = "dodge") +
+  facet_wrap(~ cols, scales = "free") +
+  scale_fill_manual(values = c("tomato", "lightskyblue3")) +
+  xlab("Levels of each variable") + ylab("Frequency") +
+  ggtitle("Comparison of Categorical Variables\n for Disease and No Disease condition") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7)) +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+```
+
+It is interesting to note that most people with a heart disease in this dataset are
+asymptomatic for their chest pain.
+
+The majority of people without a heart condition have a normal resting electrocardiographic results, but still a significant part are showing probable or definite left ventricular hypertrophy by Estes' criteria.
+
+Most people without a heart disease in this dataset have an upsloping slope of the peak exercise ST segment. And most people with a heart disease have a flat slop.
+
+The majority of people without a heart condition have a normal {thal}, and most people with a condition have reversible defect.
+
+#### b) Continuous 
+
+```{r warning=FALSE, fig.align='center'}
+# Continuous variables
+  
+age_trestbps <- ggplot(heart_disease_modified, aes(x = age, y = trestbps, color = num)) +
+  geom_point(position = "dodge") +
+  scale_fill_manual(values = c("tomato", "lightskyblue3")) +
+  xlab("Age") + ylab("Resting blood\n pressure (mmHg)") +
+  theme_bw()
+
+age_chol <- ggplot(heart_disease_modified, aes(x = age, y = chol, color = num)) +
+  geom_point(position = "dodge") +
+  scale_fill_manual(values = c("tomato", "lightskyblue3")) +
+  xlab("Age") + ylab("serum cholesterol\n (mg/dl)") +
+  theme_bw() 
+
+age_thalach <- ggplot(heart_disease_modified, aes(x = age, y = thalach, color = num)) +
+  geom_point(position = "dodge") +
+  scale_fill_manual(values = c("tomato", "lightskyblue3")) +
+  xlab("Age") + ylab("Maximum heart\n rate achieved") +
+  theme_bw()
+
+age_oldpeak <-ggplot(heart_disease_modified, aes(x = age, y = oldpeak, color = num)) +
+  geom_point(position = "dodge") +
+  scale_fill_manual(values = c("tomato", "lightskyblue3")) +
+  xlab("Age") + ylab("ST depression induced \n by exercise relative to rest") +
+  theme_bw()
+
+
+# Create a list to show all the plots together
+bivariate_cont_plot <- list(age_trestbps, age_chol, age_thalach, age_oldpeak )
+plot_grid(plotlist = bivariate_cont_plot)
+
+```
+
+
+By plotting the continuous values on the factor age, we can observe that there seems to be a negative correlation with the maximum heart rate achieved (r = - 0.39). People how are of greater age, tend to have a lower maximum heart rate achieved. There also seems to be a weak positive correlation between the age and the resting blood pressure (r = 0.28). The other variables don’t seem to show a correlation with age.
+
+
+#### d) Multivariate analysis
+
+We think that it is also interesting to do the following plots with the conditions based in addittion on the variable "cp" (chest pain type) and to the variable "Resting blood pressure (trestbps)".
+
+
+```{r, fig.align='center'}
+# Age and Resting blood pressure separated by cp and taking into account num (disease and non disease) 
+sugar_blood = ggplot(completed_data, aes(y = trestbps, x = age, color= num)) +
+  geom_point() +
+  scale_color_manual(values = c("tomato", "lightskyblue3"), 
+                     labels = c("Disease", "No disease")) +
+  labs(title="Resting blood pressure by cp",
+         y="Blood pressure",
+         x="Age (years)",
+         color="") +
+  theme_bw()
+
+sugar_blood <- sugar_blood + geom_smooth(method = "lm", fullrange = TRUE, se = FALSE, color = "black") + facet_grid(. ~ cp)
+
+```
+
+Here we can see that the correlation for the age and the blood pressure is different for different types of chest pain in this dataset – it gets lower from typical angina to asymptomatic. However, we think that this is the result of the increase in the number of patients through the groups – increase in variance means less correlation.
+
+```{r, fig.align='center'}
+# Serum cholesterol and Resting blood pressure separated by cp and taking into account num (disease and non disease) 
+
+trestbps_chol = ggplot(completed_data, aes(y = trestbps, x = chol, color= num)) +
+  geom_point() +
+  scale_color_manual(values = c("tomato", "lightskyblue3"), 
+                     labels = c("Disease", "No disease")) +
+  labs(title="Resting blood pressure by chol",
+         y="Blood pressure",
+         x="Serum cholesterol (mg/dl)",
+         color="") +
+  theme_bw()
+
+trestbps_chol<- trestbps_chol + geom_smooth(method = "lm", fullrange = TRUE, se = FALSE, color = "black") + facet_grid(. ~ cp)
+```
+Here we can see the correlation for the serum cholesterol and the blood pressure for different types of chest pain. It’s interesting that in the case of typical angina there is a strong correlation and in the others no so much. Again, we think that this is the result of the increase in the number of patients through the groups.
+
+
+```{r message=FALSE, fig.align='center'}
+# Use the library (GGally) to do a correlogram
+interested_cols <- c("trestbps","oldpeak","slope")
+
+ggpairs(heart_disease_modified, columns = interested_cols, ggplot2::aes(colour=num)) 
+
+```
+
+We found interesting here that for a given slope the people that have the disease score higher in the distribution of ST depression induced by exercise relative to rest in comparison with those that do not have a heart condition and have the same value for slope.
+
+# **2. Difference in mortality rates in hospitalized COVID-19 patients**
+
+Using the *supplementary material* from the [Difference in mortality rates in hospitalized COVID-19 patients identified by cytokine profile clustering using a machine learning approach: An outcome prediction alternative](https://www.frontiersin.org/articles/10.3389/fmed.2022.987182/full), perform the following tasks
+
+
+#### Import the data
+```{r}
+table_1 <-read.xlsx("Table 1.xlsx", startRow = 2, colNames = TRUE, na.strings = c("NI"," "))
+  # na.strings : change the "NI" and empty spaces values to NA
+
+table_2 <-read.xlsx("Table 2.xlsx", startRow = 2, colNames = TRUE, na.strings = c("NI", "ND"), fillMergedCells = TRUE)
+# Change the "NI" and "ND" values to NA
+
+```
+
+## **2.1. Reproduce Figure 1 from the publication**
+
+### **How is the data of the table_1?**
+#### **Duplicates**
+
+```{r}
+# We check if there is any ID repeated
+repeated_IDs <- table_1$ID[duplicated(table_1$ID)]
+print(unique(repeated_IDs))
+```
+
+
+```{r}
+# Filter the table_1 based on the repeated ID values
+filtered_table <- table_1 %>%
+  filter(ID %in% repeated_IDs) %>%
+  arrange(ID)
+
+filtered_table
+
+```
+- Remove some repeated rows:
+  - the row 77 for COAG-HSJD-086, because it has missing CRS data
+  - the row 115 for COAG-HSJD-136, because this patient has been hospitalized before the symptoms onset and this does not make sense
+  - the row 189 for COAG-HSJD-222, for the same reason as before.
+  - the rows 209 for COAG-HSJD-243, because this differs from the previous one just in the hospitalization day and we have to pick one 
+
+
+- COAG-HSJD-160 and COAG-HSJD-225 they have exactly the same values, so leave these values unchanged
+
+- Assign new ids to: 
+    - on row 167 'COAG-HSJD-197' -> 'COAG-HSJD-198', because this entry 'COAG-HSJD-198' is missing and all other parameters are different
+    - on row 211 'COAG-HSJD-244' -> 'COAG-HSJD-245', exactly the same
+    
+```{r}
+# Change the IDs of 167 and 211 rows (do this step first!)
+table_1[167, 1]  = "COAG-HSJD-198"
+table_1[211, 1]  = "COAG-HSJD-245"
+
+# Remove some rows:
+removed_rows = c(77,115,189,209)
+
+table_1 <- table_1[-removed_rows,]
+
+```
+
+
+```{r}
+# Weird characters
+columns_weird_val <- c("Gender", "BMI", "ARDS.Diagnosis", "Use.of.NIV", "Use.of.AMV", "Death")
+
+for (col in columns_weird_val){
+   print(unique(table_1[, col]))
+}
+  
+```
+Results:
+
+- **Gender**: the value 72 does not make sense (ID = COAG-HSJD-135, row 113), so we remove this row. Also there is a F with an extra space, remove that space.
+
+- **BMI**: there are floats with "," instead of a dot: "28,4" and "19,9".
+
+- **ARDS Diagnosis**: the numbers in this column does not make sense. We check and for this rows the "Days of ARDS" values are 0, so it makes sense that this numbers should be "No".
+
+- **Use of NIV**: in the patient COAG-HSJD-057. As same as in ARDS Diagnosis, the "Days with NIV" are 0, so it makes sense that the "Use of NIV" has to be "No".
+
+- **Death**: also appear a number in the patient COAG-HSJD-190 (row 158), we remove this row.
+
+
+To do the exercises we will use: "Gender","Use of AMV", "Use of NIV", "ARDS diagnosis" and "Death". So we will remove or modify those rows that have weird values in this columns.
+
+```{r}
+# ARDS Diagnosis
+table_1$ARDS.Diagnosis[table_1$ARDS.Diagnosis == "4"] <- "No"
+table_1$ARDS.Diagnosis[table_1$ARDS.Diagnosis == "7"] <- "No"
+unique(table_1$ARDS.Diagnosis) # check it
+```
+
+```{r, include = FALSE}
+
+# Remove the rows for Gender and Death
+  # Gender: row 113
+  # Death: row 158
+
+removed_rows_g_d = c(113,158)
+table_1 <- table_1[-removed_rows_g_d,]
+
+# Change the "F " to "F" in Gender column:
+table_1$Gender[table_1$Gender == "F "] <- "F"
+unique(table_1$Gender)  # check it
+```
+
+
+```{r include=FALSE}
+# BMI
+table_1$BMI <- gsub(",", ".", table_1$BMI)
+# Use of NIV
+table_1$Use.of.NIV[table_1$Use.of.NIV== "8"] <- "No"
+unique(table_1$Use.of.NIV) # check it
+
+```
+
+
+#### **Missing values**
+```{r}
+# Check if there are missing values
+NA_count_check <- colSums(is.na(table_1))
+print(NA_count_check)
+```
+We check the missing values for our interested variables and we see that for them there are no missing values, so we continue with the analysis and looking for the outliers.
+
+
+#### **Outliers**
+
+We only check the outliers in the variable "Age", because is the only one that can have this extreme values. To do that we will use a boxplot.
+
+```{r, fig.width= 4, fig.height= 4, fig.align='center'}
+# Check in the age column for the Figure 1A
+age_boxplot <- ggplot(table_1, aes(y = Age)) +
+  geom_boxplot(color = "red",  outlier.color = "black", outlier.size = 0.8) +       
+  ylab ("Age\n(years)") +
+  scale_x_discrete(labels = NULL) +
+  theme_classic()
+
+age_boxplot
+```
+
+We see that there are no outliers, so we continue with the objective of this section: represent the figure 1.
+
+
+### **Represent the data**
+To do this part of the exercise, we use the package **cowplot** to represent all the plots and join them in a single figure (with the function **as_grob**).
+
+```{r include=FALSE}
+# Plot A
+figure_1A <-as_grob(~hist(table_1$Age, 
+                          xlab = "Age (n)", 
+                          ylab = "Frequency (n)", 
+                          col = "lightcyan2", border = "black",
+                          main = "Age",
+                          ylim = c(0, 50),
+                          cex.main=1))
+```
+
+To reproduce the next figures (B and C), we have to group our data based on the attributes "ARDS Diagnosis", "Use of NIV" and "Use of AMV":
+
+* Group 1 (G1) = the three variables are "No"
+
+* Group 2 (G2) = 'ARDS Diagnosis' must be No, 'Use of NIV' and 'Use of AMV' could be "Yes" or "No"
+
+* Group 3 (G3) = Both 'Use of NIV' and 'ARDS Diagnosis' are both "Yes", and 'Use of AMV' is "No"
+
+* Group 4 (G4) = Both 'Use of AMV' and 'ARDS Diagnosis' are both "Yes", and 'Use of NIV' could be "Yes" or "No"
+
+```{r}
+# Create the groups
+
+  # We add a new column in the first table to store the patients by the groups we have just defined
+table_1$Group = NA
+
+  # In this loop we create the groups for each patient according to the features we have mentioned before
+
+for (i in 1:nrow(table_1)) {
+  if ( table_1[i,"Use.of.NIV"] == "No" & table_1[i, "Use.of.AMV"] == "No" & table_1[i,"ARDS.Diagnosis"] == "No" ) 
+  {table_1[i,"Group"] = "G1"} 
+  
+  else if ((table_1[i,"ARDS.Diagnosis"] == "No") & (table_1[i,"Use.of.NIV"]  == "No" | table_1[i, "Use.of.NIV"] == "Yes") & (table_1[i,"Use.of.AMV"]  == "Yes" | table_1[i, "Use.of.AMV"] == "No")) 
+    {table_1[i,"Group"] = "G2"}
+  
+  else if (table_1[i,"Use.of.NIV"] == "Yes" & table_1[i, "Use.of.AMV"] == "No" & table_1[i,"ARDS.Diagnosis"] == "Yes" ) 
+  {table_1[i,"Group"] = "G3"} 
+  
+  else if ((table_1[i,"Use.of.AMV"] == "Yes" & table_1[i,"ARDS.Diagnosis"]  == "Yes") & (table_1[i, "Use.of.NIV"] == "Yes" | table_1[i, "Use.of.NIV"] == "No")) 
+    {table_1[i,"Group"] = "G4" }
+  }
+```
+
+
+```{r fig.show='hide'}
+# Plot B
+  # We create the table which will store the information, with 4 columns and 4 rows
+figure_1B <- data.frame(matrix(ncol = 4, nrow = 4))
+
+  # Now assign the column names to the table
+colnames(figure_1B) <- c("Clinical\nclassification", "NIV", "AMV", "ARDS")
+
+  # Set the corresponding values
+figure_1B[1,] <- c("G1", "-", "-", "-")
+figure_1B[2,] <- c("G2", "-/+", "+/-", "-")
+figure_1B[3,] <- c("G3", "+", "-", "+")
+figure_1B[4,] <- c("G4", "-/+", "+", "+")
+
+  # Create the table with the function "tableGrob" and remove the 
+  # default numbers of the rows with "row = NULL"
+table_1B <- tableGrob(figure_1B, rows = NULL)
+
+  # The function "textGrob" allows us to modify the titles
+  # and we want it in bold type:
+title_bold_1B <- textGrob("Definition of the Clinical Classification", gp=gpar(fontface="bold"))
+
+  # Merge the table and the title and modify the position of them
+figure_1B <- grid.arrange(table_1B, top=title_bold_1B, vp=viewport(height=0.8))
+```
+
+
+```{r echo=TRUE, warning=FALSE}
+# Plot C
+  # Count the frequency of each group
+group_freq <- as.data.frame(table(table_1$Group))
+colnames(group_freq) <- c("Group", "Frequency")
+
+  # Bar plots
+figure_1C<- as_grob(~barplot(group_freq$Frequency, 
+        names.arg=group_freq$Group, 
+        col=c("lightblue", "lightgoldenrod1", "plum3", "indianred2"), 
+        xlab="Clinical Classification", 
+        ylab="Frequency (n)", 
+        main="Clinical Classification",
+        ylim=c(0,80),
+        cex.main=1))
+```
+
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+# Plot D
+  # Calculate the death frequencies
+deaths_freq <- as.data.frame(table(table_1$Death))
+colnames(deaths_freq) <- c("Death", "Frequency")
+  
+  # Bar plot
+figure_1D <- as_grob(~barplot(deaths_freq$Frequency, 
+        names.arg=deaths_freq$Death, 
+        col=c("lightblue", "lightgoldenrod1"), 
+        xlab="Death", 
+        ylab="Frequency (n)", 
+        main="Vital status",
+        ylim=c(0,180),
+        cex.main=1))
+
+```
+
+```{r, fig.width= 7.5, fig.height= 7, fig.align='center'}
+# Complete the Figure 1 by joining all of them
+
+  # we create a list to show all the graph together
+figure_1 <- list(figure_1A, figure_1B, figure_1C, figure_1D)
+
+plot_grid(plotlist = figure_1, labels = c("A","B","C","D"))
+```
+
+
+## **2.2. Reproduce Figure 2 from the publication**
+*But instead of representing the clusters in the annotation, represent the groups (G1 to G4).*
+
+For this part of the exercise we will use the second table (called "table_2")
+
+### How is the data of the table_2?
+
+Firstly, we make some adjustments to the table in order to continue with the analysis.
+
+```{r echo=TRUE, warning=FALSE}
+# Modify the name of the first column of table_2 to ID
+colnames(table_2)[1] = "ID"
+
+# When we try to calculate the median, some cytokines are not recognized 
+# because they have the special character ("-"), so we remove it.
+
+table_2 <- table_2 %>% rename_all(funs(gsub("-","",.)))
+
+# Also, substitute all the commas to dots:
+table_2[] <- lapply(table_2, function(x) gsub(",", ".", x))
+
+  # "lapply" function is used to apply the gsub function to each column 
+  # of the table_2 dataframe
+
+# Most of the columns are considered characters, so we change this variables 
+# to numerical except the IDs (first column)
+for (i in 2:ncol(table_2)) {
+table_2[,i] <- as.numeric(table_2[,i])
+}
+
+```
+
+We have a lot of values of each cytokine because we have measurements for each patient in different days. As they did in the paper, we calculate the median for each patient and each cytokine in order to reduce the complexity of the data.
+
+```{r}
+# We use the summarise function of the library "dplyr"
+  # group_by: allows us to group the table_2 by the IDs (called X1 in the table)
+  # na.rm = TRUE: missing values are removed before doing the median
+
+table_2_median <- table_2 %>% group_by(ID) %>% 
+  summarise(IL1β = median(IL1β, na.rm = TRUE), IL6 = median(IL6, na.rm = TRUE),
+  IL10 = median(IL10, na.rm = TRUE), IFNɑ = median(IFNɑ, na.rm = TRUE),
+  TNFɑ = median(TNFɑ, na.rm = TRUE), IL8 = median(IL8, na.rm = TRUE),
+  GCSF = median(GCSF, na.rm = TRUE), IFNγ = median(IFNγ, na.rm = TRUE),
+  CCL3 = median(CCL3, na.rm = TRUE), CXCL10 = median(CXCL10, na.rm = TRUE),
+  CCL2 = median(CCL2, na.rm = TRUE), IL38 = median(IL38, na.rm = TRUE))
+```
+
+
+Now we want to merge the table_1 that has been modified in the last part of the exercises and this last table_2_median. From the table_1 we extract what we need for this exercise: "ID" and "Group" columns.
+```{r}
+# Extract ID and Group columns from table_1
+modified_table_1 <- subset(table_1, select = c("ID","Group"))
+
+# Join both tables by the ID
+merged_table <- merge(modified_table_1, table_2_median, by="ID")
+
+```
+
+Checking the new table, merged_table, we realize that in column "IL6" there are still NA values and also there are two patients that do not belong to any group. We will run the following command to remove the possible NAs.
+```{r}
+table_to_heatmap <- na.omit(merged_table)
+```
+
+
+```{r, fig.width= 8, fig.height= 5, fig.align='center'}
+# Vector containing the group to which each patient belongs
+Group <- table_to_heatmap$Group
+
+# Set five colors using the function of the "RColorBrewer" package
+colors <- brewer.pal(4, "Set1")
+
+# Create a vector in which each patient is a color depending on the group to
+# which they belong
+list_of_colors <- ifelse(Group == "G1", colors[1],
+                   ifelse(Group == "G2", colors[2],
+                   ifelse(Group == "G3", colors[3],
+                   ifelse(Group == "G4", colors[4], NA))))
+
+# Create the heatmap
+heatmap(as.matrix(t(table_to_heatmap[,3:14])), cexCol = 0.1, xlab = "Patients", labCol = FALSE, 
+        col = brewer.pal(9,"Oranges"), scale = "column", ColSideColors = list_of_colors)
+
+# Modify the legends
+legend("right",legend=c("G1", "G2", "G3", "G4"),fill=colors)
+legend("bottomleft", legend = c("0.0", "50.0%", "100.0%"), 
+       fill = (brewer.pal(9,"Oranges")[c(1,4,9)]), 
+       title = "Relative Expression")
+```
+
+As they state in the paper, we also didn’t find an association with the 4 groups of clinical
+classification and the different values for the gene expression.
+
+
+## **2.3. Improve figure 2 of the publication**
+*Add a second annotation with information of death and a third one with information of gender.*
+
+For this last part of the exercise we use the package [**ComplexHeatmap**](https://www.bioconductor.org/packages/release/bioc/html/ComplexHeatmap.html) which allows us to create a single heatmap with different sources of data sets. This is our goal here, we want to add to the previous heatmap information about the variables "Death" and "Gender".
+
+```{r}
+# Extract from the table_1 the columns we need for the exercise
+table_1_second_heatmap <- subset(table_1, select = c("ID","Gender","Death", "Group"))
+
+# When we do the heatmap we found the problem that for the characters 
+# (alpha,beta,gamma) are not recognized so we obtain a lot of warnings
+
+new_table_2_median <- table_2_median
+
+colnames(new_table_2_median) <- gsub("ɑ", "alpha", colnames(new_table_2_median))
+colnames(new_table_2_median)  <- gsub("γ", "gamma", colnames(new_table_2_median))
+colnames(new_table_2_median) <- gsub("β", "beta", colnames(new_table_2_median))
+
+
+# Join both tables by the ID
+second_merged_table <- merge(table_1_second_heatmap, new_table_2_median, by="ID")
+
+# As before we remove all the NAs values
+table_to_second_heatmap <- na.omit(second_merged_table)
+
+```
+
+
+```{r}
+Group_2 <- table_to_second_heatmap$Group
+Death <- table_to_second_heatmap$Death
+Gender <-table_to_second_heatmap$Gender
+
+Group_annotation <- HeatmapAnnotation(Group =  Group_2, col = list(Group = c("G1" = "red", "G2" = "blue", "G3" = "green", "G4" = "purple" )))
+Death_annotation <- HeatmapAnnotation(Death =  Death, col = list( Death = c("Yes" = "gray16", "No" = "lightskyblue2")))
+Gender_annotation <- HeatmapAnnotation(Gender =  Gender, col = list(Gender = c("F" = "magenta", "M" = "yellow")))
+
+# Create the variable matrix_data which we 
+# will use to do the heatmap
+matrix_data <-as.matrix(t(table_to_second_heatmap[,5:16]))
+
+# Normalize the data
+matrix_data_normalized <- scale(matrix_data)
+
+
+```
+
+
+```{r fig.width= 8, fig.height= 5, fig.align='center'}
+
+# Do the heatmap
+Heatmap(matrix_data_normalized,
+        top_annotation = c(Group_annotation, Death_annotation, Gender_annotation), 
+        col = brewer.pal(9,"Oranges"),
+        show_column_names = FALSE, column_title = "Patients", column_title_side= "bottom" ,
+        show_heatmap_legend = TRUE,
+        heatmap_legend_param = list(title = "Relative\nexpression", 
+                                    at = c(-1,1,3), 
+                                    labels = c("0%","50%","100%")))
+
+      
+```
+
+We also don’t find any apparent association with the clinical groups, the gender or
+whether or not the person has died with the different values for the gene expression.
+
+# session info {.unnumbered}
+
+```{r, results='asis',  echo=FALSE, message=FALSE }
+sessionInfo()
+```
